@@ -1,0 +1,20 @@
+{
+  "name": "source-finder-bot",
+  "version": "1.0.0",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node src/transport/telegram/bot.js",
+    "ollama": "ollama serve"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "he": "^1.2.0",
+    "node-fetch": "^3.3.2",
+    "p-limit": "^5.0.0",
+    "telegraf": "^4.16.3"
+  },
+  "description": "",
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

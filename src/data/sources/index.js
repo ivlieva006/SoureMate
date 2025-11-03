@@ -1,0 +1,19 @@
+const { searchCrossref } = require('./crossref.js');
+const { searchSemanticScholar } = require('./semanticscholar.js');
+const { searchWikipedia } = require('./wikipedia.js');
+let searchRusneb; try { ({ searchRusneb } = require('./rusneb.js')); } catch {}
+module.exports = { searchAll };
+
+async function searchAll(query) {
+  const [c,s,w,n] = await Promise.allSettled([
+    searchCrossref(query),
+    searchSemanticScholar(query),
+    searchWikipedia(query),
+    searchRusneb ? searchRusneb(query) : Promise.resolve([])
+  ]);
+  const out = [];
+  for (const r of [c,s,w,n]) if (r.status==='fulfilled') out.push(...r.value);
+  return out;
+}
+
+module.exports = { searchAll };
