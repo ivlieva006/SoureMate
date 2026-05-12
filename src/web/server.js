@@ -5,8 +5,10 @@ const path = require('path');
 const fs = require('fs/promises');
 const crypto = require('crypto');
 const formidable = require('formidable');
+const PDFDocument = require('pdfkit');
 const { sendCodeEmail } = require('./mailer.js');
 const { analyzeAntiplagiarism } = require('../core/antiplagiarism.js');
+const { llmChat } = require('../llm/llm.js');
 
 const ROOT = path.resolve(__dirname, '../..');
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -45,6 +47,49 @@ function cleanText(value, maxLength = 120) {
   return String(value || '').trim().replace(/\s+/g, ' ').slice(0, maxLength);
 }
 
+function defaultSubscription() {
+  return {
+    planId: 'free',
+    period: 'forever',
+    status: 'active',
+    teamRequest: false,
+    updatedAt: now()
+  };
+}
+
+function normalizeSubscription(subscription = {}) {
+  const base = defaultSubscription();
+  const planId = ['free', 'deadline', 'student', 'pro', 'team'].includes(subscription.planId)
+    ? subscription.planId
+    : base.planId;
+  const period = ['forever', 'week', 'month', 'year', 'custom'].includes(subscription.period)
+    ? subscription.period
+    : base.period;
+  const status = ['active', 'team_requested'].includes(subscription.status)
+    ? subscription.status
+    : base.status;
+  return {
+    ...base,
+    ...subscription,
+    planId,
+    period,
+    status,
+    teamRequest: Boolean(subscription.teamRequest),
+    updatedAt: Number(subscription.updatedAt) || base.updatedAt
+  };
+}
+
+function publicSubscription(subscription) {
+  const normalized = normalizeSubscription(subscription);
+  return {
+    planId: normalized.planId,
+    period: normalized.period,
+    status: normalized.status,
+    teamRequest: normalized.teamRequest,
+    updatedAt: normalized.updatedAt
+  };
+}
+
 function isEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
@@ -72,6 +117,7 @@ async function readDb() {
     db.users.forEach((user) => {
       user.profile ||= {};
       user.settings ||= {};
+      user.subscription = normalizeSubscription(user.subscription);
       if (!user.profile.name) user.profile.name = user.email ? user.email.split('@')[0] : 'Имя Фамилия';
       if (!user.profile.role) user.profile.role = 'Студент · Московский политех';
       user.emailVerified = user.emailVerified !== false;
@@ -91,7 +137,8 @@ async function readDb() {
         passwordUpdatedAt: now(),
         emailVerified: true,
         profile: { name: 'Анатолий Чикинда', role: 'Студент · Московский политех', avatarUrl: '' },
-        settings: {}
+        settings: {},
+        subscription: defaultSubscription()
       }],
       sessions: [],
       emailCodes: [],
@@ -116,6 +163,7 @@ function publicUser(user) {
     role: user.profile?.role || 'Студент · Московский политех',
     avatarUrl: user.profile?.avatarUrl || '',
     settings: user.settings || {},
+    subscription: publicSubscription(user.subscription),
     passwordUpdatedAt: user.passwordUpdatedAt || user.updatedAt || user.createdAt,
     createdAt: user.createdAt
   } : null;
@@ -219,6 +267,17 @@ function smtpFallback(code, email, purpose, error) {
   };
 }
 
+function normalizeSupportHistory(history) {
+  if (!Array.isArray(history)) return [];
+  return history
+    .slice(-8)
+    .map(item => ({
+      role: item?.role === 'assistant' ? 'assistant' : 'user',
+      content: String(item?.content || '').trim().replace(/\s+/g, ' ').slice(0, 900)
+    }))
+    .filter(item => item.content);
+}
+
 function applyCors(req, res) {
   const origin = req.headers.origin || '';
   if (/^http:\/\/(localhost|127\.0\.0\.1):5500$/.test(origin)) {
@@ -261,6 +320,225 @@ function getCurrentSession(db, req) {
   const token = parseCookies(req).sm_session;
   if (!token) return null;
   return (db.sessions || []).find(s => s.token === token && s.expiresAt > now()) || null;
+}
+
+function reportTitle(report = {}) {
+  return cleanText(report.topic || report.filename || 'Отчет SourceMate', 120) || 'Отчет SourceMate';
+}
+
+function formatReportDate(timestamp) {
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  }).format(new Date(timestamp || now()));
+}
+
+function pdfFontPath(name) {
+  const candidates = [
+    `/System/Library/Fonts/Supplemental/${name}`,
+    `/Library/Fonts/${name}`,
+    path.join(ROOT, 'public', 'assets', name)
+  ];
+  return candidates.find((file) => {
+    try {
+      require('fs').accessSync(file);
+      return true;
+    } catch {
+      return false;
+    }
+  }) || null;
+}
+
+function safePdfText(value, maxLength = 1200) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+}
+
+function wrapLongPdfText(value, maxLength = 1200) {
+  return safePdfText(value, maxLength).replace(/([^\s]{42})/g, '$1 ');
+}
+
+function collectPdf(doc) {
+  const chunks = [];
+  doc.on('data', chunk => chunks.push(chunk));
+  return new Promise((resolve, reject) => {
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+  });
+}
+
+async function buildReportPdf({ report, createdAt, user }) {
+  const doc = new PDFDocument({
+    size: 'A4',
+    margins: { top: 52, right: 52, bottom: 58, left: 52 },
+    info: {
+      Title: reportTitle(report),
+      Author: 'SourceMate',
+      Subject: 'Отчет проверки оригинальности'
+    }
+  });
+  const done = collectPdf(doc);
+  const regularFont = pdfFontPath('Arial.ttf');
+  const boldFont = pdfFontPath('Arial Bold.ttf') || regularFont;
+  if (regularFont) doc.registerFont('SourceMateRegular', regularFont);
+  if (boldFont) doc.registerFont('SourceMateBold', boldFont);
+  const fontRegular = regularFont ? 'SourceMateRegular' : 'Helvetica';
+  const fontBold = boldFont ? 'SourceMateBold' : 'Helvetica-Bold';
+  const title = reportTitle(report);
+  const originality = Math.round(Number(report.originality) || 0);
+  const similarity = Math.round(Number(report.similarity) || 0);
+  const sources = report.sourcesChecked || report.sourceItems?.length || report.matches?.length || 0;
+  const contentX = 52;
+  const contentWidth = doc.page.width - 104;
+  const bottomLimit = doc.page.height - 70;
+
+  const ensureSpace = (height) => {
+    if (doc.y + height <= bottomLimit) return;
+    doc.addPage();
+    doc.y = 52;
+  };
+
+  const drawLogo = (x, y, dark = false) => {
+    const gradient = doc.linearGradient(x, y, x + 28, y + 28);
+    gradient.stop(0, '#235dff').stop(1, '#7e48ff');
+    doc.circle(x + 14, y + 14, 14).fill(gradient);
+    doc.fillColor(dark ? '#111827' : '#ffffff').font(fontBold).fontSize(20).text('SourceMate', x + 38, y + 2);
+  };
+
+  const drawHeader = () => {
+    doc.rect(0, 0, doc.page.width, 132).fill('#0b1633');
+    drawLogo(contentX, 38);
+    doc.fillColor('#ffffff').font(fontBold).fontSize(18).text('Экспорт отчета', contentX, 78);
+    doc.font(fontRegular).fontSize(10).fillColor('#cbd6ff').text(`Сформировано: ${formatReportDate(now())}`, contentX, 104);
+    doc.y = 164;
+  };
+
+  const drawSectionTitle = (text) => {
+    ensureSpace(34);
+    doc.fillColor('#0f172a').font(fontBold).fontSize(17).text(text, contentX, doc.y, { width: contentWidth });
+    doc.y += 8;
+  };
+
+  const drawTextCard = ({ title: cardTitle, body, accent = false }) => {
+    const bodyText = wrapLongPdfText(body, 1800);
+    const bodyHeight = doc.heightOfString(bodyText, {
+      width: contentWidth - 36,
+      lineGap: 4
+    });
+    const cardHeight = 52 + bodyHeight;
+    ensureSpace(cardHeight + 12);
+    const y = doc.y;
+    doc.roundedRect(contentX, y, contentWidth, cardHeight, 14)
+      .fillAndStroke(accent ? '#eef4ff' : '#f8fafc', accent ? '#bfd0ff' : '#e5e7eb');
+    doc.fillColor(accent ? '#1f3e9c' : '#111827').font(fontBold).fontSize(13)
+      .text(cardTitle, contentX + 18, y + 15, { width: contentWidth - 36 });
+    doc.fillColor('#374151').font(fontRegular).fontSize(10.5)
+      .text(bodyText, contentX + 18, y + 35, { width: contentWidth - 36, lineGap: 4 });
+    doc.y = y + cardHeight + 16;
+  };
+
+  drawHeader();
+
+  doc.fillColor('#0f172a').font(fontBold).fontSize(24)
+    .text(wrapLongPdfText(title, 220), contentX, doc.y, {
+      width: contentWidth,
+      lineGap: 2
+    });
+  doc.moveDown(0.55);
+  doc.font(fontRegular).fontSize(11).fillColor('#475569')
+    .text(`Проверка: ${formatReportDate(createdAt || report.createdAt || report.generatedAt)}`, { width: contentWidth })
+    .text(`Пользователь: ${user?.email || 'локальный экспорт'}`, { width: contentWidth })
+    .text(`Файл: ${wrapLongPdfText(report.filename || 'документ', 180)}`, { width: contentWidth });
+
+  const metricGap = 14;
+  const metricWidth = (contentWidth - metricGap * 2) / 3;
+  ensureSpace(108);
+  const metricTop = doc.y + 22;
+  [
+    ['Оригинальность', `${originality}%`],
+    ['Совпадения', `${similarity}%`],
+    ['Источников', String(sources)]
+  ].forEach(([label, value], index) => {
+    const x = contentX + index * (metricWidth + metricGap);
+    doc.roundedRect(x, metricTop, metricWidth, 78, 14).fillAndStroke('#f1f5ff', '#d5e0ff');
+    doc.fillColor('#1f3e9c').font(fontBold).fontSize(24).text(value, x + 14, metricTop + 15, {
+      width: metricWidth - 28
+    });
+    doc.fillColor('#475569').font(fontRegular).fontSize(10.5).text(label, x + 14, metricTop + 50, {
+      width: metricWidth - 28
+    });
+  });
+  doc.y = metricTop + 104;
+
+  const summary = report.summary || (
+    similarity > 25
+      ? 'В отчете есть заметные совпадения. Рекомендуется проверить проблемные источники и переработать близкие фрагменты.'
+      : 'Критичных совпадений не обнаружено. Рекомендуется сохранить список источников и перепроверить финальную версию перед сдачей.'
+  );
+  drawSectionTitle('Вывод SourceMate');
+  drawTextCard({ title: 'Краткий результат проверки', body: summary });
+
+  const matches = Array.isArray(report.matches) ? report.matches : [];
+  const sourceItems = Array.isArray(report.sourceItems) ? report.sourceItems : [];
+  const rows = matches.length
+    ? matches.slice(0, 8).map(match => ({
+        title: match.title,
+        meta: `${Math.round(Number(match.score) || 0)}% совпадения${match.url ? ` · ${match.url}` : ''}`
+      }))
+    : sourceItems.slice(0, 8).map(source => ({
+        title: source.title,
+        meta: [source.source, source.year, source.url].filter(Boolean).join(' · ')
+      }));
+  if (rows.length) {
+    doc.addPage();
+    doc.y = 52;
+  }
+  drawSectionTitle('Источники и совпадения');
+
+  if (rows.length) {
+    rows.forEach((row, index) => {
+      const sourceTitle = `${index + 1}. ${wrapLongPdfText(row.title || 'Источник', 240)}`;
+      const sourceMeta = wrapLongPdfText(row.meta || 'Источник без дополнительных данных', 360);
+      const titleHeight = doc.heightOfString(sourceTitle, { width: contentWidth - 32 });
+      const metaHeight = doc.heightOfString(sourceMeta, { width: contentWidth - 32, lineGap: 2 });
+      const rowHeight = Math.max(58, titleHeight + metaHeight + 28);
+      ensureSpace(rowHeight + 8);
+      const y = doc.y;
+      doc.roundedRect(contentX, y, contentWidth, rowHeight, 12).fillAndStroke('#ffffff', '#e5e7eb');
+      doc.fillColor('#111827').font(fontBold).fontSize(10.5).text(sourceTitle, contentX + 16, y + 12, {
+        width: contentWidth - 32,
+        lineGap: 2
+      });
+      doc.fillColor('#64748b').font(fontRegular).fontSize(9).text(sourceMeta, contentX + 16, doc.y + 3, {
+        width: contentWidth - 32,
+        lineGap: 2
+      });
+      doc.y = y + rowHeight + 8;
+    });
+  } else {
+    drawTextCard({
+      title: 'Источники не обнаружены',
+      body: 'Заметных совпадений и сохраненных источников в отчете нет.'
+    });
+  }
+
+  drawTextCard({
+    title: 'Заверено SourceMate',
+    body: 'PDF сформирован автоматически на основе сохраненного результата проверки. Используйте отчет как вспомогательный аналитический материал.',
+    accent: true
+  });
+
+  doc.font(fontRegular).fontSize(8).fillColor('#94a3b8')
+    .text('SourceMate · автоматический экспорт отчета', contentX, doc.page.height - 36, {
+      width: contentWidth,
+      align: 'center'
+    });
+
+  doc.end();
+  return done;
 }
 
 async function handleApi(req, res) {
@@ -370,6 +648,131 @@ async function handleApi(req, res) {
         })) : [],
       checks: userChecks(db, user)
     });
+  }
+
+  if (req.method === 'GET' && apiPath === '/api/subscription/state') {
+    const user = getCurrentUser(db, req);
+    await writeDb(db);
+    return sendJson(res, 200, {
+      ok: true,
+      user: publicUser(user),
+      subscription: publicSubscription(user?.subscription)
+    });
+  }
+
+  if (req.method === 'POST' && apiPath === '/api/subscription/checkout') {
+    const user = getCurrentUser(db, req);
+    if (!user) return sendError(res, 401, 'Войдите в аккаунт, чтобы оформить подписку');
+
+    const planId = String(body.planId || '').trim();
+    const requestedPeriod = String(body.period || '').trim();
+    const paidPlans = ['deadline', 'student', 'pro'];
+    if (!paidPlans.includes(planId)) return sendError(res, 400, 'Выберите доступный тариф');
+
+    const period = planId === 'deadline' ? 'week' : requestedPeriod;
+    if (planId !== 'deadline' && !['month', 'year'].includes(period)) {
+      return sendError(res, 400, 'Выберите период оплаты');
+    }
+
+    user.subscription = normalizeSubscription({
+      planId,
+      period,
+      status: 'active',
+      teamRequest: Boolean(user.subscription?.teamRequest),
+      updatedAt: now()
+    });
+    user.updatedAt = now();
+    await writeDb(db);
+    return sendJson(res, 200, {
+      ok: true,
+      user: publicUser(user),
+      subscription: publicSubscription(user.subscription),
+      message: 'Подписка обновлена'
+    });
+  }
+
+  if (req.method === 'POST' && apiPath === '/api/subscription/team-request') {
+    const user = getCurrentUser(db, req);
+    if (!user) return sendError(res, 401, 'Войдите в аккаунт, чтобы отправить заявку');
+
+    user.subscription = normalizeSubscription({
+      ...(user.subscription || {}),
+      status: 'team_requested',
+      teamRequest: true,
+      updatedAt: now()
+    });
+    user.updatedAt = now();
+    await writeDb(db);
+    return sendJson(res, 200, {
+      ok: true,
+      user: publicUser(user),
+      subscription: publicSubscription(user.subscription),
+      message: 'Заявка на командный доступ отправлена'
+    });
+  }
+
+  if (req.method === 'POST' && apiPath === '/api/support/chat') {
+    const message = String(body.message || '').trim().slice(0, 1200);
+    if (!message) return sendError(res, 400, 'Напишите вопрос для поддержки');
+
+    const user = getCurrentUser(db, req);
+    const history = normalizeSupportHistory(body.history);
+    const systemPrompt = `Ты ИИ-поддержка SourceMate.
+Отвечай на русском, кратко и дружелюбно.
+Помогай с личным кабинетом, загрузкой DOCX/PDF/TXT, поиском научных источников, отчетом оригинальности, авторизацией и настройками.
+Если вопрос требует действий команды или доступа к аккаунту, объясни безопасный следующий шаг и предложи написать на sourcemate.help@gmail.com.
+Не обещай ручную проверку, оплату или изменение аккаунта без подтверждения команды.`;
+
+    try {
+      const reply = await Promise.race([
+        llmChat([
+          { role: 'system', content: systemPrompt },
+          { role: 'system', content: `Пользователь: ${user?.email || 'гость'}` },
+          ...history,
+          { role: 'user', content: message }
+        ]),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('support-timeout')), 25000))
+      ]);
+
+      const answer = String(reply || '').trim();
+      if (!answer) throw new Error('empty-support-reply');
+      return sendJson(res, 200, { ok: true, answer });
+    } catch (error) {
+      console.error('[SourceMate] Ошибка ИИ-поддержки:', error && (error.code || error.message));
+      return sendError(res, 503, 'ИИ-поддержка временно недоступна. Проверьте, что Ollama запущена, и попробуйте еще раз.');
+    }
+  }
+
+  if (req.method === 'POST' && apiPath === '/api/reports/export') {
+    const user = getCurrentUser(db, req);
+    const checkId = cleanText(body.checkId, 120);
+    let check = null;
+
+    if (user && checkId) {
+      check = (db.checks || []).find(item => item.id === checkId && item.userId === user.id) || null;
+    }
+
+    const report = check?.report || body.report;
+    if (!report || typeof report !== 'object') return sendError(res, 400, 'Выберите отчет для экспорта');
+
+    try {
+      const pdf = await buildReportPdf({
+        report,
+        createdAt: check?.createdAt || Number(body.createdAt) || report.createdAt,
+        user
+      });
+      const filename = encodeURIComponent(`${reportTitle(report)}.pdf`);
+      res.writeHead(200, {
+        'Content-Type': 'application/pdf',
+        'Content-Length': pdf.length,
+        'Content-Disposition': `attachment; filename*=UTF-8''${filename}`
+      });
+      res.end(pdf);
+      return;
+    } catch (error) {
+      console.error('[SourceMate] Ошибка экспорта PDF:', error);
+      return sendError(res, 500, 'Не удалось подготовить PDF');
+    }
   }
 
   if (req.method === 'POST' && apiPath === '/api/account/profile') {
@@ -492,7 +895,8 @@ async function handleApi(req, res) {
       passwordUpdatedAt: now(),
       emailVerified: true,
       profile: { name: email.split('@')[0], role: 'Студент · Московский политех', avatarUrl: '' },
-      settings: {}
+      settings: {},
+      subscription: defaultSubscription()
     };
     const token = id();
     db.users.push(user);
@@ -561,7 +965,8 @@ async function handleApi(req, res) {
       passwordUpdatedAt: now(),
       emailVerified: true,
       profile: { name: email.split('@')[0], role: 'Студент · Московский политех', avatarUrl: '' },
-      settings: {}
+      settings: {},
+      subscription: defaultSubscription()
     };
     const token = id();
     db.users.push(user);

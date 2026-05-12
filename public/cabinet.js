@@ -16,11 +16,29 @@ const checkButton = document.querySelector("[data-check-trigger]");
 const resultBox = document.querySelector("[data-check-result]");
 const successWidget = document.querySelector("[data-success-widget]");
 const deleteWidget = document.querySelector("[data-delete-widget]");
+const exportWidget = document.querySelector("[data-export-widget]");
+const exportList = document.querySelector("[data-export-list]");
+const exportDownloadButton = document.querySelector("[data-download-export]");
 const settingsWidget = document.querySelector("[data-settings-widget]");
 const settingsNameInput = document.querySelector("[data-settings-name]");
 const settingsRole = document.querySelector("[data-settings-role]");
 const settingsEmail = document.querySelector("[data-settings-email]");
 const settingsPasswordUpdated = document.querySelector("[data-settings-password-updated]");
+const profileDisplay = document.querySelector("[data-profile-display]");
+const profileInlineEdit = document.querySelector("[data-profile-inline-edit]");
+const profileNameInput = document.querySelector("[data-profile-name-input]");
+const profileRoleInput = document.querySelector("[data-profile-role-input]");
+const profileStatus = document.querySelector("[data-profile-status]");
+const profileEditButton = document.querySelector("[data-account-action='profile']");
+const profileSecondaryButton = document.querySelector("[data-account-action='avatar']");
+const emailInlineEdit = document.querySelector("[data-email-inline-edit]");
+const emailInput = document.querySelector("[data-email-input]");
+const emailStatus = document.querySelector("[data-email-status]");
+const passwordInlineEdit = document.querySelector("[data-password-inline-edit]");
+const accountPasswordCurrentInput = document.querySelector("[data-account-password-current]");
+const accountPasswordNewInput = document.querySelector("[data-account-password-new]");
+const accountPasswordStatus = document.querySelector("[data-account-password-status]");
+const securityPasswordStatus = document.querySelector("[data-security-password-status]");
 const accountAvatars = document.querySelectorAll("[data-account-avatar]");
 const cancelDeleteButton = document.querySelector("[data-cancel-delete]");
 const confirmDeleteButton = document.querySelector("[data-confirm-delete]");
@@ -32,14 +50,27 @@ const CHECKS_STORAGE_KEY = "sourcemate.cabinet.checks.v1";
 const STATE_STORAGE_KEY = "sourcemate.cabinet.state.v1";
 const SELECTED_REPORT_STORAGE_KEY = "sourcemate.selectedReport.v1";
 const SELECTED_SOURCE_STORAGE_KEY = "sourcemate.selectedSource.v1";
+const urlParams = new URLSearchParams(window.location.search);
+const settingsReturnUrl = urlParams.get("return") || "";
 let selectedFile = null;
 let checkType = "full";
 let pendingUpload = null;
 let currentUser = null;
 let currentChecks = [];
 let deleteTargetId = "";
+let selectedExportCheckId = "";
 let pendingCheck = null;
 let currentSourceItems = [];
+
+function bringModalToFront(modal) {
+  document.querySelectorAll(".widget-overlay, .settings-overlay, .support-widget").forEach((item) => {
+    item.classList.toggle("is-top-modal", item === modal);
+  });
+}
+
+function clearModalLayer(modal) {
+  modal?.classList.remove("is-top-modal");
+}
 
 function storageScope(user = currentUser) {
   return user?.email ? user.email.toLowerCase() : "guest";
@@ -169,6 +200,23 @@ function formatSize(bytes) {
   if (!Number.isFinite(bytes)) return "";
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} КБ`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+}
+
+function formatDateLabel(timestamp) {
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "numeric",
+    month: "long",
+    year: "numeric"
+  }).format(new Date(timestamp || Date.now()));
+}
+
+function downloadFilename(value) {
+  return String(value || "sourcemate-report")
+    .trim()
+    .replace(/\.[^.]+$/, "")
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "sourcemate-report";
 }
 
 function selectFile(file) {
@@ -403,6 +451,10 @@ function applyWelcomeState() {
   }
 }
 
+function finishInitialRender() {
+  page.classList.remove("is-loading");
+}
+
 function renderReports(checks) {
   currentChecks = Array.isArray(checks) ? checks : [];
   document.querySelector(".stats-grid").hidden = false;
@@ -411,6 +463,7 @@ function renderReports(checks) {
   if (!reports.length) {
     updateProfileName();
     applyWelcomeState();
+    finishInitialRender();
     return;
   }
 
@@ -422,6 +475,7 @@ function renderReports(checks) {
 
   page.classList.add("is-used");
   welcome.classList.add("is-hidden");
+  finishInitialRender();
   sourcesPanel.hidden = false;
   updateProfileName();
 
@@ -536,12 +590,14 @@ function applyFailedState(message) {
 
 function showSuccessWidget() {
   successWidget.hidden = false;
+  bringModalToFront(successWidget);
   document.body.classList.add("modal-open");
 }
 
 function openDeleteWidget(checkId) {
   deleteTargetId = checkId;
   deleteWidget.hidden = false;
+  bringModalToFront(deleteWidget);
   document.body.classList.add("modal-open");
   cancelDeleteButton.focus();
 }
@@ -549,9 +605,105 @@ function openDeleteWidget(checkId) {
 function closeDeleteWidget() {
   deleteTargetId = "";
   deleteWidget.hidden = true;
+  clearModalLayer(deleteWidget);
   confirmDeleteButton.disabled = false;
   confirmDeleteButton.textContent = "Удалить";
-  document.body.classList.remove("modal-open");
+  if (widget.hidden && settingsWidget.hidden && successWidget.hidden && exportWidget.hidden) {
+    document.body.classList.remove("modal-open");
+  }
+}
+
+function exportOptionTemplate(check) {
+  const report = check.report || {};
+  const selected = check.id === selectedExportCheckId;
+  const title = report.topic || report.filename || "Загруженная работа";
+  const date = formatDateLabel(check.createdAt || report.createdAt);
+  const originality = Math.round(Number(report.originality) || 0);
+  const sources = report.sourcesChecked || report.sourceItems?.length || report.matches?.length || 0;
+  return `
+    <button class="export-option${selected ? " is-selected" : ""}" type="button" data-export-check="${esc(check.id)}">
+      <span class="export-option-copy">
+        <strong>${esc(title)}</strong>
+        <span>${esc(date)} · уникальность ${originality}% · ${sources} источников</span>
+      </span>
+      <span class="export-badge">${selected ? "Выбрано" : "PDF"}</span>
+    </button>
+  `;
+}
+
+function renderExportOptions() {
+  if (!currentChecks.length) {
+    selectedExportCheckId = "";
+    exportList.innerHTML = `<div class="export-empty">Пока нет готовых проверок для экспорта. Загрузите работу и дождитесь отчета.</div>`;
+    exportDownloadButton.disabled = true;
+    return;
+  }
+
+  if (!currentChecks.some(check => check.id === selectedExportCheckId)) {
+    selectedExportCheckId = currentChecks[0].id;
+  }
+
+  exportList.innerHTML = currentChecks.map(exportOptionTemplate).join("");
+  exportDownloadButton.disabled = false;
+}
+
+function openExportWidget() {
+  renderExportOptions();
+  exportWidget.hidden = false;
+  bringModalToFront(exportWidget);
+  document.body.classList.add("modal-open");
+  exportWidget.querySelector("[data-close-export-widget]").focus();
+}
+
+function closeExportWidget() {
+  exportWidget.hidden = true;
+  clearModalLayer(exportWidget);
+  exportDownloadButton.disabled = false;
+  exportDownloadButton.textContent = "Скачать PDF";
+  if (widget.hidden && settingsWidget.hidden && successWidget.hidden && deleteWidget.hidden) {
+    document.body.classList.remove("modal-open");
+  }
+}
+
+async function downloadExport() {
+  const check = currentChecks.find(item => item.id === selectedExportCheckId);
+  if (!check?.report) return;
+
+  exportDownloadButton.disabled = true;
+  exportDownloadButton.textContent = "Готовим PDF...";
+
+  try {
+    const response = await fetch(`${API_ORIGIN}/api/reports/export`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        checkId: check.id,
+        report: check.report,
+        createdAt: check.createdAt
+      })
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || "Не удалось подготовить PDF");
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const title = check.report.topic || check.report.filename || "sourcemate-report";
+    link.href = url;
+    link.download = `${downloadFilename(title)}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    closeExportWidget();
+  } catch (error) {
+    alert(error.message || "Не удалось скачать PDF");
+    exportDownloadButton.disabled = false;
+    exportDownloadButton.textContent = "Скачать PDF";
+  }
 }
 
 function renderEmptyCabinet() {
@@ -692,27 +844,34 @@ document.querySelectorAll("[data-upload-trigger]").forEach((button) => {
 function openWidget() {
   widgetTopicInput.value = topicInput.value;
   widget.hidden = false;
+  bringModalToFront(widget);
   document.body.classList.add("modal-open");
   widgetTopicInput.focus();
 }
 
 function closeWidget() {
   widget.hidden = true;
-  if (settingsWidget.hidden && successWidget.hidden && deleteWidget.hidden) {
+  clearModalLayer(widget);
+  if (settingsWidget.hidden && successWidget.hidden && deleteWidget.hidden && exportWidget.hidden) {
     document.body.classList.remove("modal-open");
   }
 }
 
 function openSettings() {
   settingsWidget.hidden = false;
+  bringModalToFront(settingsWidget);
   document.body.classList.add("modal-open");
   settingsWidget.querySelector("[data-close-settings]").focus();
 }
 
 function closeSettings() {
   settingsWidget.hidden = true;
-  if (widget.hidden && successWidget.hidden && deleteWidget.hidden) {
+  clearModalLayer(settingsWidget);
+  if (widget.hidden && successWidget.hidden && deleteWidget.hidden && exportWidget.hidden) {
     document.body.classList.remove("modal-open");
+  }
+  if (settingsReturnUrl) {
+    window.location.href = settingsReturnUrl;
   }
 }
 
@@ -729,6 +888,61 @@ function applyUserFromResponse(data) {
   if (data?.user) {
     currentUser = data.user;
     updateProfileName();
+  }
+}
+
+function setInlineStatus(node, message = "", error = false) {
+  if (!node) return;
+  node.textContent = message;
+  node.hidden = !message;
+  node.classList.toggle("is-error", Boolean(error));
+}
+
+function setProfileEditing(editing) {
+  if (!profileInlineEdit || !profileDisplay) return;
+  profileInlineEdit.hidden = !editing;
+  profileDisplay.hidden = editing;
+  if (profileEditButton) profileEditButton.textContent = editing ? "Сохранить" : "Редактировать";
+  if (profileSecondaryButton) {
+    profileSecondaryButton.textContent = editing ? "Отмена" : "Сменить фото";
+    profileSecondaryButton.dataset.accountAction = editing ? "profile-cancel" : "avatar";
+  }
+  if (editing) {
+    profileNameInput.value = currentUser?.name || settingsNameInput?.textContent || "";
+    profileRoleInput.value = currentUser?.role || settingsRole?.textContent || "";
+    profileNameInput.focus();
+  } else {
+    setInlineStatus(profileStatus);
+  }
+}
+
+function setRowEditing(container, inlineEdit, editing) {
+  const row = inlineEdit?.closest(".account-row") || container?.closest(".account-row");
+  if (!inlineEdit || !row) return;
+  inlineEdit.hidden = !editing;
+  row.classList.toggle("is-editing", editing);
+}
+
+function setEmailEditing(editing) {
+  setRowEditing(emailInput, emailInlineEdit, editing);
+  const button = emailInlineEdit?.closest(".account-row")?.querySelector("[data-account-action='email']");
+  if (button) button.hidden = editing;
+  if (editing) {
+    emailInput.value = currentUser?.email || settingsEmail?.textContent || "";
+    setInlineStatus(emailStatus);
+    emailInput.focus();
+  }
+}
+
+function setPasswordEditing(editing) {
+  setRowEditing(accountPasswordCurrentInput, passwordInlineEdit, editing);
+  const button = passwordInlineEdit?.closest(".account-row")?.querySelector("[data-account-action='password-tab']");
+  if (button) button.hidden = editing;
+  if (editing) {
+    accountPasswordCurrentInput.value = "";
+    accountPasswordNewInput.value = "";
+    setInlineStatus(accountPasswordStatus);
+    accountPasswordCurrentInput.focus();
   }
 }
 
@@ -764,14 +978,72 @@ async function uploadAvatar() {
 async function changePassword() {
   const currentInput = document.querySelector("[data-password-current]");
   const newInput = document.querySelector("[data-password-new]");
-  const currentPassword = currentInput?.value || prompt("Введите текущий пароль") || "";
-  const newPassword = newInput?.value || prompt("Введите новый пароль, минимум 8 символов") || "";
-  if (!currentPassword || !newPassword) return;
+  const currentPassword = currentInput?.value || "";
+  const newPassword = newInput?.value || "";
+  setInlineStatus(securityPasswordStatus);
+  if (!currentPassword) {
+    currentInput?.focus();
+    setInlineStatus(securityPasswordStatus, "Введите текущий пароль", true);
+    return;
+  }
+  if (newPassword.length < 8) {
+    newInput?.focus();
+    setInlineStatus(securityPasswordStatus, "Новый пароль должен быть не короче 8 символов", true);
+    return;
+  }
   const data = await postJson("/api/account/password", { currentPassword, newPassword });
   applyUserFromResponse(data);
   if (currentInput) currentInput.value = "";
   if (newInput) newInput.value = "";
-  alert("Пароль обновлен");
+  setInlineStatus(securityPasswordStatus, "Пароль обновлен");
+}
+
+async function saveProfileInline() {
+  if (profileInlineEdit?.hidden) {
+    setProfileEditing(true);
+    return;
+  }
+  const name = profileNameInput.value.trim();
+  const role = profileRoleInput.value.trim();
+  if (!name) {
+    profileNameInput.focus();
+    setInlineStatus(profileStatus, "Введите ник", true);
+    return;
+  }
+  await saveProfile({ name, role });
+  setProfileEditing(false);
+  setInlineStatus(profileStatus, "Профиль сохранен");
+}
+
+async function saveEmailInline() {
+  const email = emailInput.value.trim();
+  if (!email) {
+    emailInput.focus();
+    setInlineStatus(emailStatus, "Введите почту", true);
+    return;
+  }
+  await saveProfile({ email });
+  setEmailEditing(false);
+  setInlineStatus(emailStatus, "Почта обновлена. Для новой почты потребуется подтверждение.");
+}
+
+async function savePasswordInline() {
+  const currentPassword = accountPasswordCurrentInput.value;
+  const newPassword = accountPasswordNewInput.value;
+  if (!currentPassword) {
+    accountPasswordCurrentInput.focus();
+    setInlineStatus(accountPasswordStatus, "Введите текущий пароль", true);
+    return;
+  }
+  if (newPassword.length < 8) {
+    accountPasswordNewInput.focus();
+    setInlineStatus(accountPasswordStatus, "Новый пароль должен быть не короче 8 символов", true);
+    return;
+  }
+  const data = await postJson("/api/account/password", { currentPassword, newPassword });
+  applyUserFromResponse(data);
+  setPasswordEditing(false);
+  setInlineStatus(accountPasswordStatus, "Пароль обновлен");
 }
 
 async function saveSettings(patch) {
@@ -783,20 +1055,27 @@ async function saveSettings(patch) {
 async function handleAccountAction(action) {
   try {
     if (action === "profile") {
-      const name = prompt("Имя профиля", currentUser?.name || settingsNameInput?.textContent || "");
-      if (name === null) return;
-      const role = prompt("Роль", currentUser?.role || settingsRole?.textContent || "");
-      if (role === null) return;
-      await saveProfile({ name, role });
-      alert("Профиль сохранен");
+      await saveProfileInline();
+      return;
+    }
+
+    if (action === "profile-cancel") {
+      setProfileEditing(false);
       return;
     }
 
     if (action === "email") {
-      const email = prompt("Новая почта", currentUser?.email || settingsEmail?.textContent || "");
-      if (email === null) return;
-      await saveProfile({ email });
-      alert("Почта обновлена. Для новой почты потребуется подтверждение.");
+      setEmailEditing(true);
+      return;
+    }
+
+    if (action === "email-save") {
+      await saveEmailInline();
+      return;
+    }
+
+    if (action === "email-cancel") {
+      setEmailEditing(false);
       return;
     }
 
@@ -805,9 +1084,23 @@ async function handleAccountAction(action) {
       return;
     }
 
-    if (action === "password" || action === "password-tab") {
-      if (action === "password-tab") setSettingsTab("security");
+    if (action === "password") {
       await changePassword();
+      return;
+    }
+
+    if (action === "password-tab") {
+      setPasswordEditing(true);
+      return;
+    }
+
+    if (action === "password-save") {
+      await savePasswordInline();
+      return;
+    }
+
+    if (action === "password-cancel") {
+      setPasswordEditing(false);
       return;
     }
 
@@ -852,7 +1145,20 @@ async function handleAccountAction(action) {
       alert("Журнал безопасности пока доступен как заглушка. Полный аудит событий будет подключен позже.");
     }
   } catch (error) {
-    alert(error.message || "Не удалось выполнить действие");
+    const message = error.message || "Не удалось выполнить действие";
+    if (["profile", "profile-cancel"].includes(action)) {
+      setInlineStatus(profileStatus, message, true);
+      return;
+    }
+    if (["email", "email-save", "email-cancel"].includes(action)) {
+      setInlineStatus(emailStatus, message, true);
+      return;
+    }
+    if (["password", "password-tab", "password-save", "password-cancel"].includes(action)) {
+      setInlineStatus(action === "password" ? securityPasswordStatus : accountPasswordStatus, message, true);
+      return;
+    }
+    alert(message);
   }
 }
 
@@ -868,14 +1174,36 @@ document.addEventListener("click", (event) => {
   openSettings();
 });
 
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-open-export-widget]");
+  if (!button) return;
+  openExportWidget();
+});
+
 document.querySelectorAll("[data-close-upload-widget]").forEach((button) => {
   button.addEventListener("click", closeWidget);
 });
 
+document.querySelectorAll("[data-close-export-widget]").forEach((button) => {
+  button.addEventListener("click", closeExportWidget);
+});
+
+exportList.addEventListener("click", (event) => {
+  const option = event.target.closest("[data-export-check]");
+  if (!option) return;
+  selectedExportCheckId = option.dataset.exportCheck;
+  renderExportOptions();
+});
+
+exportDownloadButton.addEventListener("click", downloadExport);
+
 document.querySelectorAll("[data-close-success-widget]").forEach((button) => {
   button.addEventListener("click", () => {
     successWidget.hidden = true;
-    document.body.classList.remove("modal-open");
+    clearModalLayer(successWidget);
+    if (widget.hidden && settingsWidget.hidden && deleteWidget.hidden && exportWidget.hidden) {
+      document.body.classList.remove("modal-open");
+    }
   });
 });
 
@@ -885,6 +1213,10 @@ widget.addEventListener("click", (event) => {
 
 deleteWidget.addEventListener("click", (event) => {
   if (event.target === deleteWidget) closeDeleteWidget();
+});
+
+exportWidget.addEventListener("click", (event) => {
+  if (event.target === exportWidget) closeExportWidget();
 });
 
 settingsWidget.addEventListener("click", (event) => {
@@ -922,6 +1254,32 @@ settingsWidget.addEventListener("click", async (event) => {
     } catch (error) {
       alert(error.message || "Не удалось сохранить настройку");
     }
+  }
+});
+
+settingsWidget.addEventListener("keydown", async (event) => {
+  if (event.key !== "Enter" && event.key !== "Escape") return;
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) return;
+
+  if (target.closest("[data-profile-inline-edit]")) {
+    event.preventDefault();
+    if (event.key === "Escape") setProfileEditing(false);
+    else await handleAccountAction("profile");
+    return;
+  }
+
+  if (target.closest("[data-email-inline-edit]")) {
+    event.preventDefault();
+    if (event.key === "Escape") setEmailEditing(false);
+    else await handleAccountAction("email-save");
+    return;
+  }
+
+  if (target.closest("[data-password-inline-edit]")) {
+    event.preventDefault();
+    if (event.key === "Escape") setPasswordEditing(false);
+    else await handleAccountAction("password-save");
   }
 });
 
@@ -1041,12 +1399,20 @@ widgetDropzone.addEventListener("drop", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !widget.hidden) closeWidget();
   if (event.key === "Escape" && !settingsWidget.hidden) closeSettings();
+  if (event.key === "Escape" && !exportWidget.hidden) closeExportWidget();
   if (event.key === "Escape" && !successWidget.hidden) {
     successWidget.hidden = true;
-    document.body.classList.remove("modal-open");
+    clearModalLayer(successWidget);
+    if (widget.hidden && settingsWidget.hidden && deleteWidget.hidden && exportWidget.hidden) {
+      document.body.classList.remove("modal-open");
+    }
   }
   if (event.key === "Escape" && !deleteWidget.hidden) closeDeleteWidget();
 });
 
 applyWelcomeState();
 loadCabinetState();
+
+if (urlParams.get("settings") === "1") {
+  openSettings();
+}

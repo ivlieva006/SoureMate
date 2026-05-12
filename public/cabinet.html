@@ -6,9 +6,15 @@
     <title>SourceMate — личный кабинет</title>
     <meta name="description" content="Личный кабинет SourceMate.">
     <link rel="stylesheet" href="./cabinet.css">
+    <link rel="prefetch" href="./report.html">
+    <link rel="prefetch" href="./report.js">
+    <link rel="prefetch" href="./source.html">
+    <link rel="prefetch" href="./source.js">
+    <link rel="prefetch" href="./subscription.html">
+    <link rel="prefetch" href="./subscription.js">
   </head>
   <body>
-    <main class="cabinet-page">
+    <main class="cabinet-page is-loading">
       <div class="cabinet-bg bg-left"></div>
       <div class="cabinet-bg bg-чright"></div>
       <div class="cabinet-bg bg-bottom"></div>
@@ -21,10 +27,8 @@
           </a>
 
           <nav class="cabinet-menu" aria-label="Разделы">
-            <a href="#overview">Обзор</a>
-            <a href="#checks">Проверки</a>
-            <a href="#sources">Источники</a>
-            <a href="#plan">Подписка</a>
+            <button class="cabinet-menu-link" type="button" data-open-settings>Настройки</button>
+            <a href="./subscription.html">Подписка</a>
           </nav>
 
           <button class="cabinet-support" type="button">Поддержка</button>
@@ -183,7 +187,7 @@
                   ×
                 </button>
                 <span class="banner-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24"><path d="M12 3.75 19.5 7.5v6.75c0 3.45-3.15 5.55-7.5 6-4.35-.45-7.5-2.55-7.5-6V7.5L12 3.75Z"></path><path d="m9 12 2 2 4-4"></path></svg>
+                  <svg viewBox="0 0 24 24"><path d="M12 22C12 22 20 18 20 12V5L12 2L4 5V12C4 18 12 22 12 22Z"></path><path d="M9 12L11 14L15 9"></path></svg>
                 </span>
                 <h3>Обезопасьте учетную запись</h3>
                 <p>Подключите многофакторную аутентификацию: код по почте, SMS или приложение-аутентификатор для защиты входа.</p>
@@ -323,15 +327,16 @@
                     <div class="security-inputs">
                       <label class="security-input">
                         <span>Текущий пароль</span>
-                        <input type="password" value="12345678" aria-label="Текущий пароль">
+                        <input type="password" aria-label="Текущий пароль" autocomplete="current-password" data-password-current>
                       </label>
                       <label class="security-input">
                         <span>Новый пароль</span>
-                        <input type="text" value="Минимум 8 символов" aria-label="Новый пароль">
+                        <input type="password" placeholder="Минимум 8 символов" aria-label="Новый пароль" autocomplete="new-password" data-password-new>
                       </label>
                     </div>
                     <button class="settings-save security-update" type="button" data-account-action="password">Обновить</button>
                   </div>
+                  <p class="inline-edit-status" data-security-password-status hidden></p>
                 </article>
 
                 <article class="settings-card security-card security-group">
@@ -383,11 +388,22 @@
                   <div class="account-profile-main">
                     <span class="account-avatar" aria-hidden="true" data-account-avatar></span>
                     <div class="account-profile-copy">
-                      <div>
+                      <div class="account-profile-display" data-profile-display>
                         <h3 data-settings-name>Анатолий Чикинда</h3>
                         <p data-settings-role>Студент · Московский политех</p>
                       </div>
+                      <div class="account-profile-inline-edit" data-profile-inline-edit hidden>
+                        <label>
+                          <span>Ник</span>
+                          <input type="text" autocomplete="name" data-profile-name-input>
+                        </label>
+                        <label>
+                          <span>Роль</span>
+                          <input type="text" data-profile-role-input>
+                        </label>
+                      </div>
                       <span class="account-verified">Почта подтверждена</span>
+                      <p class="inline-edit-status" data-profile-status hidden></p>
                     </div>
                   </div>
                   <div class="account-profile-actions">
@@ -403,6 +419,12 @@
                     <span class="account-row-copy">
                       <small>Почта</small>
                       <b data-settings-email>student@mail.ru</b>
+                      <span class="account-row-inline-edit" data-email-inline-edit hidden>
+                        <input type="email" autocomplete="email" data-email-input>
+                        <button type="button" data-account-action="email-save">Сохранить</button>
+                        <button type="button" data-account-action="email-cancel">Отмена</button>
+                      </span>
+                      <span class="inline-edit-status" data-email-status hidden></span>
                     </span>
                     <button class="account-link" type="button" data-account-action="email">Изменить</button>
                   </div>
@@ -411,6 +433,13 @@
                     <span class="account-row-copy">
                       <small>Пароль</small>
                       <b data-settings-password-updated>Обновлен 8 дней назад</b>
+                      <span class="account-row-inline-edit account-password-inline-edit" data-password-inline-edit hidden>
+                        <input type="password" placeholder="Текущий пароль" autocomplete="current-password" data-account-password-current>
+                        <input type="password" placeholder="Новый пароль" autocomplete="new-password" data-account-password-new>
+                        <button type="button" data-account-action="password-save">Сохранить</button>
+                        <button type="button" data-account-action="password-cancel">Отмена</button>
+                      </span>
+                      <span class="inline-edit-status" data-account-password-status hidden></span>
                     </span>
                     <button class="account-link" type="button" data-account-action="password-tab">Сменить</button>
                   </div>
@@ -529,8 +558,42 @@
           </div>
         </section>
       </div>
+
+      <div class="widget-overlay export-overlay" data-export-widget hidden>
+        <section class="export-widget" role="dialog" aria-modal="true" aria-labelledby="export-widget-title">
+          <header class="export-widget-head">
+            <div class="widget-top">
+              <span class="widget-logo">
+                <span class="brand-mark"></span>
+                <strong>SourceMate</strong>
+              </span>
+              <button class="widget-close" type="button" data-close-export-widget aria-label="Закрыть экспорт">×</button>
+            </div>
+            <h2 id="export-widget-title">Экспорт отчетов</h2>
+            <p>Выберите нужную проверку. SourceMate подготовит PDF с кратким детальным разбором и заверением результата</p>
+          </header>
+
+          <div class="export-widget-body">
+            <div class="export-list" data-export-list></div>
+
+            <article class="export-format-panel">
+              <span>PDF</span>
+              <div>
+                <strong>Итоговый файл для пользователя</strong>
+                <p>Детальный разбор, выводы, источники и отметка “заверено SourceMate”.</p>
+              </div>
+            </article>
+
+            <div class="widget-actions export-actions">
+              <button class="widget-cancel" type="button" data-close-export-widget>Отмена</button>
+              <button class="widget-submit" type="button" data-download-export>Скачать PDF</button>
+            </div>
+          </div>
+        </section>
+      </div>
     </main>
 
     <script src="./cabinet.js"></script>
+    <script src="./support.js"></script>
   </body>
 </html>

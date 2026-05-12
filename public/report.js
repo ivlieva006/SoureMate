@@ -8,12 +8,50 @@ let currentUser = null;
 let currentCheck = null;
 let currentSources = [];
 
+function finishPageRender() {
+  document.querySelector(".cabinet-page")?.classList.remove("is-loading");
+}
+
 function esc(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function profileName() {
+  return currentUser?.name || (currentUser?.email ? currentUser.email.split("@")[0] : "Имя Фамилия");
+}
+
+function profileRole() {
+  return currentUser?.role || "Студент · Московский политех";
+}
+
+function avatarMarkup() {
+  const avatarUrl = currentUser?.avatarUrl || "";
+  const style = avatarUrl ? ` style="background-image: url(&quot;${esc(avatarUrl)}&quot;); background-size: cover; background-position: center;"` : "";
+  return `<span class="avatar${avatarUrl ? " has-image" : ""}" aria-hidden="true"${style}></span>`;
+}
+
+async function refreshCurrentUser() {
+  try {
+    const response = await fetch(`${API_ORIGIN}/api/auth/me`, { credentials: "include" });
+    const data = await response.json().catch(() => ({}));
+    if (data.user) currentUser = data.user;
+  } catch {
+    // Keep the user passed through sessionStorage if the network request fails.
+  }
+}
+
+function preserveSettingsReturn() {
+  document.querySelectorAll('a[href="./cabinet.html?settings=1"]').forEach((link) => {
+    const params = new URLSearchParams({
+      settings: "1",
+      return: `${window.location.pathname}${window.location.search}${window.location.hash}`
+    });
+    link.href = `./cabinet.html?${params.toString()}`;
+  });
 }
 
 function storageScope(user = currentUser) {
@@ -123,6 +161,7 @@ function showNotFound() {
       <button class="upload-button" type="button" data-detail-back>Вернуться к проверкам</button>
     </section>
   `;
+  finishPageRender();
 }
 
 function readSelectedReport(checkId) {
@@ -145,7 +184,6 @@ function renderReport(check) {
   const fragments = problemFragments(report);
   const riskySources = (report.matches || []).filter(match => Number(match.score) >= 20).length;
   const risk = riskInfo(report);
-  const profileName = currentUser?.email ? currentUser.email.split("@")[0] : "Имя Фамилия";
   const sources = (report.matches || []).length
     ? report.matches
     : (report.sourceItems || []).map(source => ({
@@ -222,10 +260,10 @@ function renderReport(check) {
       <aside class="detail-side">
         <article class="detail-profile">
           <div class="profile-row">
-            <span class="avatar" aria-hidden="true"></span>
+            ${avatarMarkup()}
             <div>
-              <h2>${esc(profileName)}</h2>
-              <p>Студент · Московский политех</p>
+              <h2>${esc(profileName())}</h2>
+              <p>${esc(profileRole())}</p>
             </div>
           </div>
           <button class="cabinet-btn primary wide" type="button" data-detail-back>Вернуться к проверкам</button>
@@ -262,6 +300,7 @@ function renderReport(check) {
       </div>
     </section>
   `;
+  finishPageRender();
 }
 
 function openSource(index) {
@@ -298,6 +337,7 @@ async function loadReport() {
 
   const selectedCheck = readSelectedReport(checkId);
   if (selectedCheck) {
+    await refreshCurrentUser();
     renderReport(selectedCheck);
     return;
   }
@@ -354,4 +394,5 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeReport();
 });
 
+preserveSettingsReturn();
 loadReport();

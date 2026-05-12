@@ -6,9 +6,15 @@
     <title>SourceMate — карточка источника</title>
     <meta name="description" content="Карточка источника SourceMate.">
     <link rel="stylesheet" href="./cabinet.css">
+    <link rel="prefetch" href="./cabinet.html">
+    <link rel="prefetch" href="./cabinet.js">
+    <link rel="prefetch" href="./report.html">
+    <link rel="prefetch" href="./report.js">
+    <link rel="prefetch" href="./subscription.html">
+    <link rel="prefetch" href="./subscription.js">
   </head>
   <body>
-    <main class="cabinet-page">
+    <main class="cabinet-page is-loading">
       <div class="cabinet-bg bg-left"></div>
       <div class="cabinet-bg bg-right"></div>
       <div class="cabinet-bg bg-bottom"></div>
@@ -21,10 +27,8 @@
           </a>
 
           <nav class="cabinet-menu" aria-label="Разделы">
-            <a href="./cabinet.html#overview">Обзор</a>
-            <a href="./cabinet.html#checks">Проверки</a>
-            <a href="./cabinet.html#sources">Источники</a>
-            <a href="./cabinet.html#plan">Подписка</a>
+            <a href="./cabinet.html?settings=1">Настройки</a>
+            <a href="./subscription.html">Подписка</a>
           </nav>
 
           <button class="cabinet-support" type="button">Поддержка</button>
@@ -39,6 +43,8 @@
       </div>
     </main>
 
+    <script src="./settings-modal.js"></script>
     <script src="./source.js"></script>
+    <script src="./support.js"></script>
   </body>
 </html>

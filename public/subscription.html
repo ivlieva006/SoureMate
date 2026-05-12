@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SourceMate — подписка</title>
+    <meta name="description" content="Тарифы и подписка SourceMate.">
+    <link rel="stylesheet" href="./cabinet.css">
+    <link rel="prefetch" href="./cabinet.html">
+    <link rel="prefetch" href="./cabinet.js">
+    <link rel="prefetch" href="./report.html">
+    <link rel="prefetch" href="./report.js">
+    <link rel="prefetch" href="./source.html">
+    <link rel="prefetch" href="./source.js">
+  </head>
+  <body>
+    <main class="subscription-page is-loading" data-subscription-page>
+      <section class="subscription-offer" data-plan-banner>
+        <strong>Командный SourceMate:</strong>
+        <span>единый кабинет для преподавателей, кафедр, курсов и учебных групп</span>
+        <button type="button" data-plan-tab="team">Запросить доступ →</button>
+      </section>
+
+      <div class="subscription-bg" aria-hidden="true"></div>
+
+      <header class="subscription-nav" aria-label="Навигация подписки">
+        <a class="cabinet-brand" href="./cabinet.html" aria-label="SourceMate">
+          <span class="brand-mark"></span>
+          <strong>SourceMate</strong>
+        </a>
+        <nav class="cabinet-menu" aria-label="Разделы">
+          <a href="./cabinet.html?settings=1">Настройки</a>
+          <a class="is-active" href="./subscription.html">Подписка</a>
+        </nav>
+        <button class="cabinet-support" type="button">Поддержка</button>
+      </header>
+
+      
+
+      <section class="subscription-shell" data-billing-mode="personal" data-period="year">
+        <div class="subscription-heading">
+          <h1 data-subscription-title>Личный план SourceMate</h1>
+          <p data-subscription-subtitle>Выберите тариф под дедлайн, семестр или большую исследовательскую работу</p>
+        </div>
+
+        <div class="billing-toggle" aria-label="Тип подписки">
+          <button class="active" type="button" data-plan-tab="personal">Личный план</button>
+          <button type="button" data-plan-tab="team">Команда</button>
+        </div>
+
+        <div class="period-toggle" aria-label="Период оплаты">
+          <button type="button" data-period-tab="month">Месяц</button>
+          <button class="active" type="button" data-period-tab="year">Год -40%</button>
+        </div>
+
+        <section class="pricing-cards" data-personal-plans aria-label="Личные тарифы"></section>
+
+        <section class="team-institution-card" data-team-preview>
+          <div class="team-plan-left">
+            <h2>Team / Institution</h2>
+            <p>Для преподавателей, кафедр и курсов</p>
+            <strong>от 1 490 ₽/польз./мес</strong>
+          </div>
+          <ul class="team-plan-list">
+            <li>От 5 пользователей и гибкие лимиты</li>
+            <li>Командный кабинет и отчёты группы</li>
+            <li>Приватность и управление участниками</li>
+            <li>Лимиты по участникам и курсам</li>
+          </ul>
+          <div class="team-plan-cta">
+            <p>Подходит для учебных групп, где важны контроль, приватность и единые отчёты</p>
+            <button type="button" data-plan-tab="team">Запросить командный доступ</button>
+          </div>
+        </section>
+
+        <section class="team-plan-screen" data-team-plans hidden>
+          <article class="team-hero-card">
+            <div class="team-hero-copy">
+              <h2>Team / Institution</h2>
+              <strong>от 1 490 ₽/польз./мес</strong>
+              <p>От 5 пользователей. Подходит для преподавателей, кафедр, курсов, научных групп и небольших образовательных организаций</p>
+              <button type="button" data-team-request>Запросить командный доступ</button>
+            </div>
+            <div class="team-metrics">
+              <article><strong>5+</strong><span>минимум участников</span></article>
+              <article><strong>SSO/MFA</strong><span>приватность данных</span></article>
+              <article><strong>∞</strong><span>общая история и отчёты</span></article>
+              <article><strong>гибко</strong><span>лимиты по участникам</span></article>
+            </div>
+            <div class="team-important">
+              <h3>Что важно</h3>
+              <span>• Контроль лимитов</span>
+              <span>• Отчёты группы</span>
+              <span>• Роли участников</span>
+              <span>• Приватность</span>
+              <span>• Единая оплата</span>
+            </div>
+          </article>
+
+          <div class="team-feature-grid">
+            <article><strong>Командный кабинет</strong><span>Все участники, работы, проверки и статусы в одном пространстве</span></article>
+            <article><strong>Приватность</strong><span>Данные не используются для обучения и не видны другим группам</span></article>
+            <article><strong>Приоритет обработки</strong><span>Командная очередь для больших потоков работ</span></article>
+            <article><strong>Лимиты участников</strong><span>Распределяйте проверки и знаки по студентам, группам и курсам</span></article>
+            <article><strong>Роли и доступы</strong><span>Администратор, преподаватель, участник, наблюдатель</span></article>
+            <article><strong>История без потерь</strong><span>Архив проверок по курсам, семестрам и участникам</span></article>
+            <article><strong>Отчёты группы</strong><span>Сводки по прогрессу, проблемным фрагментам и источникам</span></article>
+            <article><strong>Экспорт пакетом</strong><span>PDF/DOCX отчёты по одной работе или всей группе</span></article>
+            <article><strong>Оплата по счёту</strong><span>Удобно для кафедр, школ и организаций</span></article>
+          </div>
+        </section>
+      </section>
+
+      <div class="subscription-toast" data-subscription-toast hidden></div>
+    </main>
+    <button class="subscription-close" type="button" data-close-subscription aria-label="Вернуться в кабинет">×</button>
+    <script>
+      (() => {
+        const closeButton = document.querySelector("[data-close-subscription]");
+        if (!closeButton) return;
+        document.body.append(closeButton);
+        closeButton.style.setProperty("position", "fixed", "important");
+        closeButton.style.setProperty("top", "126px");
+        closeButton.style.setProperty("right", "24px");
+        closeButton.style.setProperty("z-index", "100");
+        closeButton.style.setProperty("transform", "none");
+      })();
+    </script>
+
+    <script src="./settings-modal.js"></script>
+    <script src="./subscription.js?v=close-fixed-2"></script>
+    <script src="./support.js"></script>
+  </body>
+</html>
