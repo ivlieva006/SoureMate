@@ -95,8 +95,8 @@ source search bot/
 ## Установка
 
 ```bash
-git clone https://github.com/ivlieva006/SoureMate.git
-cd SoureMate
+git clone https://github.com/ivlieva006/SourсeMate.git
+cd SourсeMate
 npm install
 ```
 
